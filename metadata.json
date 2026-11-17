@@ -1,0 +1,6 @@
+{
+  "name": "Cadence — Calm Scheduling",
+  "description": "Structured appointment coordination and calendar scheduling workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

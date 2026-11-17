@@ -1,0 +1,215 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isSignedIn()
+        && request.auth.uid == userId
+        && request.auth.token.email_verified == true;
+    }
+
+    function isValidLocation(loc) {
+      return loc in ['Google Meet', 'Zoom', 'Studio B · SF', 'Phone Call'];
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'timezone', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'photoURL', 'role', 'timezone', 'createdAt', 'updatedAt'])
+        && data.uid == userId
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && (!('role' in data) || (data.role is string && data.role.size() <= 100))
+        && data.timezone is string && data.timezone.size() >= 1 && data.timezone.size() <= 64
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt'])
+        && data.uid == userId
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEventType(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'slug', 'title', 'durationMinutes', 'location',
+          'description', 'bufferMinutes', 'dailyLimit', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'slug', 'title', 'durationMinutes', 'location',
+          'description', 'bufferMinutes', 'dailyLimit', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.ownerId)
+        && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 80 && data.slug.matches('^[a-z0-9\\-]+$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 100
+        && data.durationMinutes is int && data.durationMinutes >= 5 && data.durationMinutes <= 240
+        && isValidLocation(data.location)
+        && data.description is string && data.description.size() <= 500
+        && data.bufferMinutes is int && data.bufferMinutes >= 0 && data.bufferMinutes <= 60
+        && data.dailyLimit is int && data.dailyLimit >= 1 && data.dailyLimit <= 20
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBooking(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'eventTypeId', 'date', 'startTime', 'durationMinutes',
+          'status', 'clientName', 'clientEmail', 'clientCompany', 'location',
+          'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'title', 'eventTypeId', 'date', 'startTime', 'durationMinutes',
+          'status', 'clientName', 'clientEmail', 'clientCompany', 'clientAvatar',
+          'location', 'meetingUrl', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.ownerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && isValidId(data.eventTypeId)
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.startTime is string && data.startTime.size() == 5 && data.startTime.matches('^\\d{2}:\\d{2}$')
+        && data.durationMinutes is int && data.durationMinutes >= 5 && data.durationMinutes <= 240
+        && data.status in ['confirmed', 'pending', 'cancelled']
+        && data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 100
+        && data.clientEmail is string && data.clientEmail.size() <= 160
+        && data.clientCompany is string && data.clientCompany.size() <= 100
+        && (!('clientAvatar' in data) || (data.clientAvatar is string && data.clientAvatar.size() <= 300))
+        && isValidLocation(data.location)
+        && (!('meetingUrl' in data) || (data.meetingUrl is string && data.meetingUrl.size() <= 300))
+        && data.notes is string && data.notes.size() <= 2000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data, userId) {
+      return data.keys().hasAll(['ownerId', 'role', 'text', 'modelUsed', 'createdAt'])
+        && data.keys().hasOnly(['ownerId', 'role', 'text', 'modelUsed', 'createdAt'])
+        && data.ownerId == userId
+        && isValidId(data.ownerId)
+        && data.role in ['user', 'model']
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 16000
+        && data.modelUsed is string && data.modelUsed.size() >= 1 && data.modelUsed.size() <= 64
+        && data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isVerifiedOwner(userId) && isValidId(userId);
+      allow create: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'role', 'timezone', 'updatedAt']);
+
+      match /private/{docId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && docId == 'info';
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && docId == 'info'
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && docId == 'info'
+          && isValidUserPrivateInfo(incoming(), userId)
+          && incoming().uid == existing().uid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+      }
+
+      match /eventTypes/{eventTypeId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(eventTypeId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(eventTypeId)
+          && isValidEventType(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(eventTypeId)
+          && isValidEventType(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['active', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'durationMinutes', 'location', 'bufferMinutes', 'dailyLimit', 'updatedAt'])
+          );
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(eventTypeId);
+      }
+
+      match /bookings/{bookingId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bookingId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(bookingId)
+          && isValidBooking(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(bookingId)
+          && isValidBooking(incoming(), userId)
+          && existing().status != 'cancelled'
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+            || incoming().diff(existing()).affectedKeys().hasOnly(['date', 'startTime', 'updatedAt'])
+          );
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(bookingId);
+      }
+
+      match /chatMessages/{messageId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(messageId);
+        allow list: if isVerifiedOwner(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isVerifiedOwner(userId)
+          && isValidId(userId)
+          && isValidId(messageId)
+          && isValidChatMessage(incoming(), userId)
+          && incoming().createdAt == request.time;
+        allow delete: if isVerifiedOwner(userId) && isValidId(userId) && isValidId(messageId);
+      }
+    }
+  }
+}
