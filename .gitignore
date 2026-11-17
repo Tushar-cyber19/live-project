@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Assessment brief PDF (not part of source)
+freelancer_assessment_candidate_brief.pdf
